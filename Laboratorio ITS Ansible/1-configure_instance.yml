@@ -1,20 +1,25 @@
 ---
 - name: Playbook per aggiornamenti e installazione di httpd
-  hosts: [instance]
-  become: true  # Esegue i comandi come superutente
+  hosts: [instance]  # Esegue il playbook sul gruppo di host chiamato "instance" (precedentemente definito nell'inventario)
+  become: true  # Esegue i comandi come superutente (necessario per installare pacchetti e gestire servizi di sistema)
+  
   tasks:
+    # Aggiornamento di tutti i pacchetti all'ultima versione disponibile
     - name: Aggiorna tutti i pacchetti
       dnf:
-        name: "*"
-        state: latest
+        name: "*"  # Specifica che tutti i pacchetti devono essere aggiornati
+        state: latest  # Imposta i pacchetti allo stato "latest" per eseguire l'aggiornamento
 
+    # Installazione del server web Apache (httpd)
     - name: Installa httpd
       dnf:
-        name: httpd
-        state: present
+        name: httpd  # Nome del pacchetto da installare
+        state: present  # Garantisce che httpd sia presente nel sistema
 
+    # Avvio di httpd e abilitazione all'avvio automatico al boot del sistema
     - name: Avvia e abilita httpd al boot
       systemd:
-        name: httpd
-        state: started
-        enabled: true
+        name: httpd  # Nome del servizio da gestire
+        state: started  # Avvia il servizio se non è già in esecuzione
+        enabled: true  # Imposta il servizio per l'avvio automatico al boot
+
