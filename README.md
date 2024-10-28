@@ -7,7 +7,7 @@ pip3 install boto3 botocore
 sudo apt install ansible
 ```
 
-Installazione collezioni Ansible
+Installazione delle collezioni per Ansible
 ```
 ansible-galaxy collection install amazon.aws
 ansible-galaxy collection install ansible.posix
