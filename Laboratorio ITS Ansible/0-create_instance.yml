@@ -3,12 +3,12 @@
   hosts: localhost
   connection: local
   vars:
-####(TODO - 1) Inserire le variabili per la creazione delle risorse AWS
+    # Variabili per configurare le risorse AWS
     region: eu-west-2
     instance_type: t2.micro
     ami_id: ami-0acc77abdfc7ed5a6
-    aws_access_key_id: "##########################"
-    aws_secret_access_key: "##########################"
+    aws_access_key_id: "#######################"
+    aws_secret_access_key: "###################"
     key_name: LaboratorioKey
     vpc_name: "VPC-Env-1"
     cidr_block: "10.0.0.0/16"
@@ -18,8 +18,7 @@
     availability_zone_1: eu-west-2a
 
   tasks:
-
-  # Creazione della VPC
+    # Creazione di una VPC con il CIDR specificato
     - name: Crea una VPC
       amazon.aws.ec2_vpc_net:
         region: "{{ region }}"
@@ -29,7 +28,7 @@
         cidr_block: "{{ cidr_block }}"
         state: present
 
-  # Recupero dei dati necessari alla configurazione
+    # Recupero delle informazioni sulla VPC creata per utilizzare il suo ID
     - name: Ottieni INFO VPC
       amazon.aws.ec2_vpc_net_info:
         region: "{{ region }}"
@@ -37,14 +36,17 @@
         aws_secret_access_key: "{{ aws_secret_access_key }}"
       register: vpc_info
 
+    # Filtro della VPC appena creata usando il blocco CIDR
     - name: Filtra VPC
       set_fact:
         filtered_vpcs: "{{ vpc_info.vpcs | selectattr('cidr_block', 'match', '^10.0.0.0/16$') }}"
 
+    # Estrazione dell'ID della VPC per riferimenti successivi
     - name: Estrai VPC ID
       set_fact:
         vpc_id: "{{ filtered_vpcs[0].vpc_id }}"
 
+    # Creazione di una subnet all'interno della VPC
     - name: Crea subnet1
       amazon.aws.ec2_vpc_subnet:
         region: "{{ region }}"
@@ -55,6 +57,7 @@
         az: "{{ availability_zone_1 }}"
         state: present
 
+    # Creazione di un Internet Gateway per la VPC
     - name: Crea un Internet gateway
       amazon.aws.ec2_vpc_igw:
         region: "{{ region }}"
@@ -64,6 +67,7 @@
         state: present
       register: igw
 
+    # Creazione di un Security Group con regole di accesso specifiche per IP e porte
     - name: Crea un Security Group
       amazon.aws.ec2_security_group:
         region: "{{ region }}"
@@ -84,6 +88,7 @@
             cidr_ip: 213.140.29.46/32
             rule_desc: allow port 80 from my ip
 
+    # Recupero delle informazioni sul Security Group
     - name: Ottieni informazioni sul Security Group
       amazon.aws.ec2_security_group_info:
         region: "{{ region }}"
@@ -93,14 +98,17 @@
         aws_secret_access_key: "{{ aws_secret_access_key }}"
       register: security_group_info
 
+    # Estrazione dell'ID del Security Group per uso successivo
     - name: Estrai Group ID
       set_fact:
         security_group_id: "{{ security_group_info.security_groups[0].group_id }}"
 
+    # Debug per visualizzare l'ID del Security Group
     - name: Print Security Group ID
       debug:
         var: security_group_id
 
+    # Recupero delle informazioni sulle subnet create
     - name: Ottieni informazioni sulle subnet
       amazon.aws.ec2_vpc_subnet_info:
         region: "{{ region }}"
@@ -110,10 +118,12 @@
         aws_secret_access_key: "{{ aws_secret_access_key }}"
       register: subnet_info
 
+    # Estrazione dell'ID della subnet per configurazioni successive
     - name: Estrai Subnets ID
       set_fact:
         subnet_id_1: "{{ subnet_info.subnets[0].subnet_id }}"
 
+    # Recupero delle informazioni sulle tabelle di routing
     - name: Ottieni informazioni sulle table routes
       amazon.aws.ec2_vpc_route_table_info:
         region: "{{ region }}"
@@ -123,6 +133,7 @@
           vpc-id: "{{ vpc_id }}"
       register: route_table_info
 
+    # Configurazione della tabella di routing per consentire l'accesso Internet
     - name: Modifica tabella delle route
       amazon.aws.ec2_vpc_route_table:
         route_table_id: "{{ route_table_info.route_tables[0].id }}"
@@ -136,6 +147,7 @@
         aws_access_key_id: "{{ aws_access_key_id }}"
         aws_secret_access_key: "{{ aws_secret_access_key }}"
 
+    # Creazione di una prima istanza EC2 con configurazioni di rete e sicurezza
     - name: Crea prima istanza EC2
       amazon.aws.ec2_instance:
         network_interfaces:
@@ -152,14 +164,17 @@
         state: present
       register: instance1
 
+    # Estrazione dell'ID della prima istanza per referenze future
     - name: Estrai Instanza 1 ID
       set_fact:
         instance1_id: "{{ instance1.instance_ids[0] }}"
 
+    # Attesa per garantire che l'istanza EC2 sia attiva prima di procedere
     - name: Attendo che le instanze siano operative
       pause:
         seconds: 30
 
+    # Recupero dell'indirizzo IP pubblico dell'istanza EC2
     - name: Recupero Public IP 1°istanza
       amazon.aws.ec2_instance_info:
         region: "{{ region }}"
@@ -168,11 +183,11 @@
         filters:
           instance-id: "{{ instance1_id }}"
       register: eip1
-    
+
+    # Creazione del file di inventory per Ansible con il Public IP della prima istanza
     - name: Creo inventory file
       copy:
         dest: "./inventory"
         content: |
           [instance]
           {{ eip1.instances[0].public_ip_address }} ansible_user=ec2-user ansible_ssh_private_key_file=./{{ key_name }}.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no'
-          
