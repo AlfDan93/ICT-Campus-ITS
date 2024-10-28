@@ -1,0 +1,20 @@
+---
+- name: Playbook per aggiornamenti e installazione di httpd
+  hosts: [instance]
+  become: true  # Esegue i comandi come superutente
+  tasks:
+    - name: Aggiorna tutti i pacchetti
+      dnf:
+        name: "*"
+        state: latest
+
+    - name: Installa httpd
+      dnf:
+        name: httpd
+        state: present
+
+    - name: Avvia e abilita httpd al boot
+      systemd:
+        name: httpd
+        state: started
+        enabled: true

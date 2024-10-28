@@ -1,0 +1,178 @@
+---
+- name: Creazione delle risorse AWS
+  hosts: localhost
+  connection: local
+  vars:
+####(TODO - 1) Inserire le variabili per la creazione delle risorse AWS
+    region: eu-west-2
+    instance_type: t2.micro
+    ami_id: ami-0acc77abdfc7ed5a6
+    aws_access_key_id: "##########################"
+    aws_secret_access_key: "##########################"
+    key_name: LaboratorioKey
+    vpc_name: "VPC-Env-1"
+    cidr_block: "10.0.0.0/16"
+    security_group_name: "SecGroup-Env-1"
+    subnet_names_1: "Subnet-1"
+    subnet_cidr_block_1: "10.0.1.0/24"
+    availability_zone_1: eu-west-2a
+
+  tasks:
+
+  # Creazione della VPC
+    - name: Crea una VPC
+      amazon.aws.ec2_vpc_net:
+        region: "{{ region }}"
+        name: "{{ vpc_name }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+        cidr_block: "{{ cidr_block }}"
+        state: present
+
+  # Recupero dei dati necessari alla configurazione
+    - name: Ottieni INFO VPC
+      amazon.aws.ec2_vpc_net_info:
+        region: "{{ region }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+      register: vpc_info
+
+    - name: Filtra VPC
+      set_fact:
+        filtered_vpcs: "{{ vpc_info.vpcs | selectattr('cidr_block', 'match', '^10.0.0.0/16$') }}"
+
+    - name: Estrai VPC ID
+      set_fact:
+        vpc_id: "{{ filtered_vpcs[0].vpc_id }}"
+
+    - name: Crea subnet1
+      amazon.aws.ec2_vpc_subnet:
+        region: "{{ region }}"
+        vpc_id: "{{ vpc_id }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+        cidr: "{{ subnet_cidr_block_1 }}"
+        az: "{{ availability_zone_1 }}"
+        state: present
+
+    - name: Crea un Internet gateway
+      amazon.aws.ec2_vpc_igw:
+        region: "{{ region }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+        vpc_id: "{{ vpc_id }}"
+        state: present
+      register: igw
+
+    - name: Crea un Security Group
+      amazon.aws.ec2_security_group:
+        region: "{{ region }}"
+        name: "{{ security_group_name }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+        description: sg with rule descriptions
+        vpc_id: "{{ vpc_id }}"
+        rules:
+          - proto: tcp
+            ports:
+              - 22
+            cidr_ip: 213.140.29.46/32
+            rule_desc: allow port 22 from my ip
+          - proto: tcp
+            ports:
+              - 80
+            cidr_ip: 213.140.29.46/32
+            rule_desc: allow port 80 from my ip
+
+    - name: Ottieni informazioni sul Security Group
+      amazon.aws.ec2_security_group_info:
+        region: "{{ region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+      register: security_group_info
+
+    - name: Estrai Group ID
+      set_fact:
+        security_group_id: "{{ security_group_info.security_groups[0].group_id }}"
+
+    - name: Print Security Group ID
+      debug:
+        var: security_group_id
+
+    - name: Ottieni informazioni sulle subnet
+      amazon.aws.ec2_vpc_subnet_info:
+        region: "{{ region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+      register: subnet_info
+
+    - name: Estrai Subnets ID
+      set_fact:
+        subnet_id_1: "{{ subnet_info.subnets[0].subnet_id }}"
+
+    - name: Ottieni informazioni sulle table routes
+      amazon.aws.ec2_vpc_route_table_info:
+        region: "{{ region }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: route_table_info
+
+    - name: Modifica tabella delle route
+      amazon.aws.ec2_vpc_route_table:
+        route_table_id: "{{ route_table_info.route_tables[0].id }}"
+        lookup: id
+        region: "{{ region }}"
+        vpc_id: "{{ vpc_id }}"
+        routes:
+          - dest: "0.0.0.0/0"
+            gateway_id: "{{ igw.gateway_id }}"
+        state: present
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+
+    - name: Crea prima istanza EC2
+      amazon.aws.ec2_instance:
+        network_interfaces:
+          - assign_public_ip: true
+        name: mg-env01-m01
+        region: "{{ region }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami_id }}"
+        key_name: "{{ key_name }}"
+        vpc_subnet_id: "{{ subnet_id_1 }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+        security_group: "{{ security_group_name }}"
+        state: present
+      register: instance1
+
+    - name: Estrai Instanza 1 ID
+      set_fact:
+        instance1_id: "{{ instance1.instance_ids[0] }}"
+
+    - name: Attendo che le instanze siano operative
+      pause:
+        seconds: 30
+
+    - name: Recupero Public IP 1°istanza
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        aws_access_key_id: "{{ aws_access_key_id }}"
+        aws_secret_access_key: "{{ aws_secret_access_key }}"
+        filters:
+          instance-id: "{{ instance1_id }}"
+      register: eip1
+    
+    - name: Creo inventory file
+      copy:
+        dest: "./inventory"
+        content: |
+          [instance]
+          {{ eip1.instances[0].public_ip_address }} ansible_user=ec2-user ansible_ssh_private_key_file=./{{ key_name }}.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+          
